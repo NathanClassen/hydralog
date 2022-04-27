@@ -38,6 +38,27 @@ func newStore(f *os.File) (*store, error) {
 	}, nil
 }
 
+// ReadAt makes store implement the io.ReaderAt interface
+func (s *store) ReadAt(p []byte, off int64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.buf.Flush(); err != nil {
+		return 0, err
+	}
+	return s.File.ReadAt(p, off)
+}
+
+// Close persists any buffered data to disk before closing the file
+func (s *store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	err := s.buf.Flush()
+	if err != nil {
+		return err
+	}
+	return s.File.Close()
+}
+
 // Append appends a new record to the log
 func (s *store) Append(p []byte) (n uint64, pos uint64, err error) {
 	s.mu.Lock()
@@ -88,25 +109,4 @@ func (s *store) Read(pos uint64) ([]byte, error) {
 
 	// return the record
 	return b, nil
-}
-
-// ReadAt makes store implement the io.ReaderAt interface
-func (s *store) ReadAt(p []byte, off int64) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.buf.Flush(); err != nil {
-		return 0, err
-	}
-	return s.File.ReadAt(p, off)
-}
-
-// Close persists any buffered data to disk before closing the file
-func (s *store) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	err := s.buf.Flush()
-	if err != nil {
-		return err
-	}
-	return s.File.Close()
 }

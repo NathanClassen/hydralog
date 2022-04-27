@@ -56,6 +56,19 @@ func newSegment(dir string, baseOffset uint64, c Config) (*segment, error) {
 	return s, nil
 }
 
+func (s *segment) Close() error {
+	//	this flushes all in mem data to persistent, truncates the file to max size needed to contain the data, and then
+	//		closes the file such that it can no loger be used for IO... but still, will not the Segment.Remove method
+	//		delete the underlying file entirely?
+	if err := s.index.Close(); err != nil {
+		return err
+	}
+	if err := s.store.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *segment) Append(record *api.Record) (offset uint64, err error) {
 	cur := s.nextOffset
 	record.Offset = cur
@@ -114,19 +127,6 @@ func (s *segment) Remove() error {
 		return err
 	}
 	if err := os.Remove(s.store.Name()); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *segment) Close() error {
-	//	this flushes all in mem data to persistent, truncates the file to max size needed to contain the data, and then
-	//		closes the file such that it can no loger be used for IO... but still, will not the Segment.Remove method
-	//		delete the underlying file entirely?
-	if err := s.index.Close(); err != nil {
-		return err
-	}
-	if err := s.store.Close(); err != nil {
 		return err
 	}
 	return nil

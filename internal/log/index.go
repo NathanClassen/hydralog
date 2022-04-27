@@ -77,6 +77,31 @@ func newIndex(f *os.File, c Config) (*index, error) {
 	return idx, nil
 }
 
+func (i *index) Name() string {
+	return i.file.Name()
+}
+
+func (i *index) Close() error {
+	// flush changes in the mapped region to 'device' ?
+	if err := i.mmap.Sync(gommap.MS_SYNC); err != nil {
+		return err
+	}
+	// commit the in-memory file changes to stable storage
+	if err := i.file.Sync(); err != nil {
+		return err
+	}
+	// truncate file to size of index
+	// we truncate it back down, to be only the size it needs to be given how much data it currently holds
+	//    this way, the last entry comprises the last bytes in the file. This allows us to know where the last entry
+	//	  is, and to easily find it and its offset. Before truncating back down to this least needed size, there was
+	//    some unknown amount of blank space due to the initial truncation
+	if err := i.file.Truncate(int64(i.size)); err != nil {
+		return err
+	}
+	// close file; can no longer be used for I/O
+	return i.file.Close()
+}
+
 func (i *index) Read(in int64) (out uint32, pos uint64, err error) {
 	if i.size == 0 {
 		return 0, 0, io.EOF
@@ -113,29 +138,4 @@ func (i *index) Write(off uint32, pos uint64) error {
 	//    entwidth. This is where the next entry will begin
 	i.size += entWidth
 	return nil
-}
-
-func (i *index) Name() string {
-	return i.file.Name()
-}
-
-func (i *index) Close() error {
-	// flush changes in the mapped region to 'device' ?
-	if err := i.mmap.Sync(gommap.MS_SYNC); err != nil {
-		return err
-	}
-	// commit the in-memory file changes to stable storage
-	if err := i.file.Sync(); err != nil {
-		return err
-	}
-	// truncate file to size of index
-	// we truncate it back down, to be only the size it needs to be given how much data it currently holds
-	//    this way, the last entry comprises the last bytes in the file. This allows us to know where the last entry
-	//	  is, and to easily find it and its offset. Before truncating back down to this least needed size, there was
-	//    some unknown amount of blank space due to the initial truncation
-	if err := i.file.Truncate(int64(i.size)); err != nil {
-		return err
-	}
-	// close file; can no longer be used for I/O
-	return i.file.Close()
 }

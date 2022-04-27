@@ -84,6 +84,23 @@ func (l *Log) newSegment(off uint64) error {
 	return nil
 }
 
+func (o *originReader) Read(p []byte) (int, error) {
+	n, err := o.ReadAt(p, o.off)
+	o.off += int64(n)
+	return n, err
+}
+
+func (l *Log) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, segment := range l.segments {
+		if err := segment.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (l *Log) Append(record *api.Record) (uint64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -113,17 +130,6 @@ func (l *Log) Read(off uint64) (*api.Record, error) {
 	return s.Read(off)
 }
 
-func (l *Log) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, segment := range l.segments {
-		if err := segment.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (l *Log) Remove() error {
 	if err := l.Close(); err != nil {
 		return err
@@ -136,22 +142,6 @@ func (l *Log) Reset() error {
 		return err
 	}
 	return l.setup()
-}
-
-func (l *Log) LowestOffset() (uint64, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.segments[0].baseOffset, nil
-}
-
-func (l *Log) HighestOffset() (uint64, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	off := l.segments[len(l.segments)-1].nextOffset
-	if off == 0 {
-		return 0, nil
-	}
-	return off - 1, nil
 }
 
 func (l *Log) Truncate(lowest uint64) error {
@@ -181,8 +171,18 @@ func (l *Log) Reader() io.Reader {
 	return io.MultiReader(readers...)
 }
 
-func (o *originReader) Read(p []byte) (int, error) {
-	n, err := o.ReadAt(p, o.off)
-	o.off += int64(n)
-	return n, err
+func (l *Log) LowestOffset() (uint64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.segments[0].baseOffset, nil
+}
+
+func (l *Log) HighestOffset() (uint64, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	off := l.segments[len(l.segments)-1].nextOffset
+	if off == 0 {
+		return 0, nil
+	}
+	return off - 1, nil
 }
