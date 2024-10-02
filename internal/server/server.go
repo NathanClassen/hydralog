@@ -4,17 +4,28 @@ import (
 	"context"
 
 	api "github.com/NathanClassen/hydralog/api/v1"
-	// "google.golang.org/grpc"
+	"google.golang.org/grpc"
 )
 
 type Config struct {
 	CommitLog CommitLog
 }
 
-//	a type assertion. We use a blank identifier because we don't actually need a variable here
-//		we simply create a nil pointer of type *grpcServer. This ensures that the grpcServer
-//		implements the LogServer interface
+// a type assertion. We use a blank identifier because we don't actually need a variable here
+//
+//	we simply create a nil pointer of type *grpcServer. This ensures that the grpcServer
+//	implements the LogServer interface
 var _ api.LogServer = (*grpcServer)(nil)
+
+func NewGRPCServer(config *Config) (*grpc.Server, error) {
+	gsrv := grpc.NewServer()
+	srv, err := newgrpcServer(config)
+	if err != nil {
+		return nil, err
+	}
+	api.RegisterLogServer(gsrv, srv)
+	return gsrv, nil
+}
 
 type grpcServer struct {
 	api.UnimplementedLogServer
@@ -42,6 +53,45 @@ func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (*api
 		return nil, err
 	}
 	return &api.ConsumeResponse{Record: record}, nil
+}
+
+func (s *grpcServer) ProduceStream(stream api.Log_ProduceStreamServer) error {
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		res, err := s.Produce(stream.Context(), req)
+		if err != nil {
+			return err
+		}
+		if err = stream.Send(res); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *grpcServer) ConsumeStream(req *api.ConsumeRequest, stream api.Log_ConsumeStreamServer) error {
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		default:
+			res, err := s.Consume(stream.Context(), req)
+			switch err.(type) {
+			case nil:
+			case api.ErrOffsetOutOfRange:
+				continue
+			default:
+				return err
+			}
+
+			if err = stream.Send(res); err != nil {
+				return err
+			}
+			req.Offset++
+		}
+	}
 }
 
 type CommitLog interface {

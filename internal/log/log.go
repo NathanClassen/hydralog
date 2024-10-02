@@ -1,7 +1,6 @@
 package log
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path"
@@ -17,11 +16,11 @@ type Log struct {
 	//	TODO: look into how RWMutex works compared to Mutex
 	mu sync.RWMutex
 
-	Dir string
+	Dir    string
 	Config Config
-	
+
 	activeSegment *segment
-	segments []*segment
+	segments      []*segment
 }
 
 func NewLog(dir string, c Config) (*Log, error) {
@@ -35,7 +34,7 @@ func NewLog(dir string, c Config) (*Log, error) {
 	}
 
 	l := &Log{
-		Dir: dir,
+		Dir:    dir,
 		Config: c,
 	}
 
@@ -109,7 +108,7 @@ func (l *Log) Read(offset uint64) (*api.Record, error) {
 	//	removed second condition because this shouldn't ever happen given the second
 	//		condition of the search above.
 	if s == nil { //|| s.nextOffset <= offset {
-		return nil, fmt.Errorf("offest out of range: %d", offset)
+		return nil, api.ErrOffsetOutOfRange{Offset: offset}
 	}
 
 	//	read the segement to get the record at the offset
@@ -150,7 +149,7 @@ func (l *Log) LowestOffset() (uint64, error) {
 func (l *Log) HighestOffset() (uint64, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	offset := l.segments[len(l.segments) - 1].nextOffset
+	offset := l.segments[len(l.segments)-1].nextOffset
 	if offset == 0 {
 		return 0, nil
 	}
@@ -205,4 +204,3 @@ func (l *Log) newSegment(offset uint64) error {
 	l.activeSegment = s
 	return nil
 }
-
